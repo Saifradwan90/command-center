@@ -452,7 +452,7 @@ async function fetchState(){
     S = st; render(); return;
   }
   const r = await fetch("/api/state", {cache:"no-store"});
-  S = await r.json();
+  S = await r.json(); HOME_DIR = S.home || "";
   render();
 }
 
@@ -846,7 +846,13 @@ const KIND_AR = {html:"صفحة ويب", video:"فيديو", image:"صور", pdf
 const KIND_ICON = {html:"🌐", video:"🎬", image:"🖼", pdf:"📄", slides:"📊", doc:"📝", sheet:"📈", text:"📃", audio:"🎧", other:"📦"};
 const blobCache = {};
 const fmtSize = b => b > 1048576 ? (b/1048576).toFixed(1)+" MB" : Math.max(1, Math.round(b/1024))+" KB";
+let HOME_DIR = "";
+const b64url = s => btoa(unescape(encodeURIComponent(s))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
 async function fileSrc(f, preview=false){
+  if(!STATIC && f.kind === "html" && !preview){
+    const i = f.path.lastIndexOf("/");
+    return `/f/${b64url(f.path.slice(0, i).replace(/^~/, HOME_DIR))}/${encodeURIComponent(f.path.slice(i + 1))}`;
+  }
   if(!STATIC) return (preview ? "/preview?p=" : "/files?p=") + encodeURIComponent(f.path);
   const ref = preview ? f.enc_preview : f.enc;
   if(!ref) return null;
