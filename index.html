@@ -267,6 +267,33 @@ input[type=range]{width:100%;accent-color:var(--gold)}
 .lock{position:fixed;inset:0;z-index:100;display:grid;place-items:center;background:var(--bg)}
 .lock .box{width:min(360px,90vw);background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:26px;display:flex;flex-direction:column;gap:12px}
 .lock h2{margin:0;font-size:18px}.lock p{margin:0;color:var(--muted);font-size:13px}
+
+/* ---------- deliverables ---------- */
+.drawer.wide{width:min(1000px,100vw)}
+.fviewer{background:var(--bg);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:10px}
+.fv-head{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--line);font-size:12.5px;flex-wrap:wrap}
+.fv-head span:first-child{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.fv-frame{width:100%;height:560px;border:0;background:#fff;display:block}
+.fv-media{display:block;max-width:100%;max-height:600px;margin:0 auto;background:#000}
+.fv-md{padding:14px 18px;max-height:600px;overflow:auto;font-size:13px;line-height:1.8}
+.fv-md h3,.fv-md h4,.fv-md h5{margin:14px 0 6px;color:var(--gold)} .fv-md p{margin:6px 0} .fv-md pre{white-space:pre-wrap;font-size:12px}
+.fv-md blockquote{border-inline-start:3px solid var(--gold2);margin:8px 0;padding:4px 10px;color:var(--muted)}
+.mdt{border-collapse:collapse;margin:8px 0;font-size:12px}.mdt td{border:1px solid var(--line);padding:5px 8px}
+.flist{display:flex;flex-direction:column;gap:8px}
+.fgroup{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.fgk{font-size:11.5px;color:var(--gold2);margin-inline-end:4px;white-space:nowrap}
+.fchip{border:1px solid var(--line);background:var(--panel2);border-radius:8px;padding:4px 9px;font-size:11.5px;color:var(--muted);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:ltr}
+.fchip.on,.fchip:hover{border-color:var(--gold2);color:var(--text)}
+.fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-top:6px}
+.fthumb{aspect-ratio:1;border:1px solid var(--line);border-radius:10px;overflow:hidden;padding:0;background:var(--panel2)}
+.fthumb img{width:100%;height:100%;object-fit:cover;display:block}.fthumb.noimg::after{content:"🖼";font-size:22px}
+.lightbox{position:fixed;inset:0;z-index:120;background:rgba(0,0,0,.9);display:grid;place-items:center}
+.lightbox img{max-width:90vw;max-height:84vh;border-radius:8px}
+.lb-x{position:absolute;top:16px;left:16px;background:none;border:0;color:#fff;font-size:22px}
+.lb-n{position:absolute;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.08);border:0;color:#fff;font-size:34px;width:48px;height:64px;border-radius:10px}
+.lb-prev{right:16px}.lb-next{left:16px}.lb-cap{position:absolute;bottom:18px;color:#ddd;font-size:13px}
+.tstrip{display:flex;gap:4px;align-items:center;margin-top:2px}.tstrip img{width:34px;height:34px;border-radius:6px;object-fit:cover;border:1px solid var(--line)}
+.tstrip .tk{font-size:13px}.tstrip .tid{margin-inline-start:auto}
 </style>
 </head>
 <body>
@@ -482,6 +509,7 @@ async function loadEncrypted(){
         if(keep) store("key:" + env.salt, keyHex);
       }
       const st = await decrypt(unhex(keyHex), env);
+      window.__ccKey = keyHex;
       setLive(true);
       return st;
     }catch(e){ keyHex = ""; store("key:" + env.salt, ""); }
@@ -789,7 +817,7 @@ function renderDrawerLive(){
     </div>`).join("")}`;
   box.querySelectorAll("[data-open]").forEach(b => b.onclick = () => api("/api/open", {path:b.dataset.open}));
 }
-function closeDrawer(){ openId = null; $("#drawer").classList.remove("on"); $("#scrim").classList.remove("on"); }
+function closeDrawer(){ openId = null; $("#drawer").classList.remove("on", "wide"); $("#scrim").classList.remove("on"); }
 function flashSaved(){ const s = $("#saved"); if(!s) return; s.classList.add("on"); clearTimeout(s._t); s._t = setTimeout(()=>s.classList.remove("on"), 1400); }
 function debounce(fn, ms){ let t; return (...a) => { clearTimeout(t); t = setTimeout(()=>fn(...a), ms); }; }
 function toast(t){ const el = $("#toast"); el.textContent = t; el.classList.add("on"); clearTimeout(el._t); el._t = setTimeout(()=>el.classList.remove("on"), 2200); }
@@ -812,6 +840,113 @@ setInterval(() => {
   updateLiveText();
 }, 1000);
 setInterval(() => S && (renderSide(), document.querySelectorAll(".heat").length && renderView()), 60000);
+
+/* ================= DELIVERABLES PREVIEW ================= */
+const KIND_AR = {html:"صفحة ويب", video:"فيديو", image:"صور", pdf:"PDF", slides:"عرض تقديمي", doc:"مستند", sheet:"جدول", text:"نص", audio:"صوت", other:"ملف"};
+const KIND_ICON = {html:"🌐", video:"🎬", image:"🖼", pdf:"📄", slides:"📊", doc:"📝", sheet:"📈", text:"📃", audio:"🎧", other:"📦"};
+const blobCache = {};
+const fmtSize = b => b > 1048576 ? (b/1048576).toFixed(1)+" MB" : Math.max(1, Math.round(b/1024))+" KB";
+async function fileSrc(f, preview=false){
+  if(!STATIC) return (preview ? "/preview?p=" : "/files?p=") + encodeURIComponent(f.path);
+  const ref = preview ? f.enc_preview : f.enc;
+  if(!ref) return null;
+  if(blobCache[ref]) return blobCache[ref];
+  const keyHex = window.__ccKey;
+  const r = await fetch(STATIC.files + ref, {cache:"force-cache"});
+  if(!r.ok) return null;
+  const buf = new Uint8Array(await r.arrayBuffer());
+  const key = await crypto.subtle.importKey("raw", unhex(keyHex), "AES-GCM", false, ["decrypt"]);
+  const plain = await crypto.subtle.decrypt({name:"AES-GCM", iv:buf.slice(0,12)}, key, buf.slice(12));
+  const mime = preview ? "image/png" : (f.mime || "application/octet-stream");
+  return blobCache[ref] = URL.createObjectURL(new Blob([plain], {type:mime}));
+}
+function mdToHtml(md){
+  const e = s => esc(s).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").replace(/`([^`]+)`/g,"<code>$1</code>");
+  const lines = md.replace(/^---[\s\S]*?\n---\n/, "").split("\n"); let out = [], inList = false, inTable = false;
+  for(const l of lines){
+    if(/^\s*\|/.test(l)){ if(/^\s*\|[\s:-|]+\|\s*$/.test(l)) continue;
+      if(!inTable){ out.push('<table class="mdt">'); inTable = true; }
+      out.push("<tr>" + l.trim().replace(/^\||\|$/g,"").split("|").map(c=>`<td>${e(c.trim())}</td>`).join("") + "</tr>"); continue; }
+    if(inTable){ out.push("</table>"); inTable = false; }
+    const h = l.match(/^(#{1,4})\s+(.*)/);
+    if(h){ if(inList){out.push("</ul>"); inList=false;} out.push(`<h${h[1].length+2}>${e(h[2])}</h${h[1].length+2}>`); continue; }
+    const li = l.match(/^\s*[-*]\s+(.*)/) || l.match(/^\s*\d+\.\s+(.*)/);
+    if(li){ if(!inList){out.push("<ul>"); inList=true;} out.push(`<li>${e(li[1])}</li>`); continue; }
+    if(inList && !l.trim()){ out.push("</ul>"); inList=false; continue; }
+    if(l.startsWith(">")){ out.push(`<blockquote>${e(l.replace(/^>\s?/,""))}</blockquote>`); continue; }
+    if(l.trim()) out.push(`<p>${e(l)}</p>`);
+  }
+  if(inList) out.push("</ul>"); if(inTable) out.push("</table>");
+  return out.join("");
+}
+async function showInViewer(f){
+  const v = $("#fviewer"); if(!v) return;
+  document.querySelectorAll("#flist .fchip").forEach(c=>c.classList.toggle("on", c.dataset.p === f.path));
+  v.innerHTML = `<div class="empty" style="padding:30px;text-align:center">جارٍ التحميل…</div>`;
+  const head = `<div class="fv-head"><span>${KIND_ICON[f.kind]||""} ${esc(f.name)}</span><span class="tid">${fmtSize(f.size)} · ${ago(f.mtime)}</span>
+    ${!STATIC?`<button class="btn sm" data-openfile="${esc(f.path)}">فتح بالماك</button>`:""}
+    <a class="btn sm ghost" id="fvNew" target="_blank" rel="noopener">تبويب جديد ↗</a></div>`;
+  const offline = `<div class="empty" style="padding:24px">هالملف ما انرفع للنسخة الأونلاين (كبير أو نوعه ما بيتعرض) — افتحه من الماك.</div>`;
+  let body = "";
+  if(["pdf","html"].includes(f.kind)){
+    const src = await fileSrc(f); body = src ? `<iframe class="fv-frame" src="${src}" ${f.kind==="html"?'sandbox="allow-scripts allow-popups"':""}></iframe>` : offline;
+  } else if(f.kind === "video"){
+    const src = await fileSrc(f); body = src ? `<video class="fv-media" src="${src}" controls preload="metadata"></video>` : offline;
+  } else if(f.kind === "audio"){
+    const src = await fileSrc(f); body = src ? `<audio src="${src}" controls style="width:100%"></audio>` : offline;
+  } else if(f.kind === "image"){
+    const src = await fileSrc(f); body = src ? `<img class="fv-media" src="${src}">` : offline;
+  } else if(f.kind === "text"){
+    const src = await fileSrc(f);
+    if(src){ const txt = await (await fetch(src)).text(); body = `<div class="fv-md">${f.name.endsWith(".md") ? mdToHtml(txt) : `<pre>${esc(txt.slice(0, 60000))}</pre>`}</div>`; } else body = offline;
+  } else if(["doc","sheet","slides"].includes(f.kind)){
+    const src = await fileSrc(f, true); body = src ? `<img class="fv-media" src="${src}"><div class="empty">معاينة سريعة — للنسخة الكاملة اضغط «فتح بالماك».</div>` : offline;
+  } else body = `<div class="empty" style="padding:24px">ما في معاينة لهالنوع — ${!STATIC?"افتحه من الماك.":"افتحه من الماك."}</div>`;
+  v.innerHTML = head + body;
+  const nw = $("#fvNew"); const s = await fileSrc(f).catch(()=>null);
+  if(nw && s) nw.href = s; else nw?.remove();
+  v.querySelectorAll("[data-openfile]").forEach(b => b.onclick = () => api("/api/open-file", {path:b.dataset.openfile}));
+}
+function openLightbox(list, i){
+  let idx = i;
+  const el = document.createElement("div"); el.className = "lightbox";
+  const draw = async () => { const f = list[idx]; const src = await fileSrc(f);
+    el.innerHTML = `<button class="lb-x">✕</button><button class="lb-n lb-prev">›</button><img src="${src||""}"><button class="lb-n lb-next">‹</button><div class="lb-cap">${esc(f.name)} · ${idx+1}/${list.length}</div>`;
+    el.querySelector(".lb-x").onclick = close; el.querySelector(".lb-prev").onclick = e => { e.stopPropagation(); idx = (idx-1+list.length)%list.length; draw(); };
+    el.querySelector(".lb-next").onclick = e => { e.stopPropagation(); idx = (idx+1)%list.length; draw(); }; };
+  const key = e => { if(e.key==="Escape") close(); if(e.key==="ArrowLeft"){ idx=(idx+1)%list.length; draw(); } if(e.key==="ArrowRight"){ idx=(idx-1+list.length)%list.length; draw(); } };
+  const close = () => { el.remove(); document.removeEventListener("keydown", key); };
+  el.onclick = e => { if(e.target === el) close(); };
+  document.addEventListener("keydown", key); document.body.appendChild(el); draw();
+}
+function renderFiles(t){
+  const box = $("#fbox"); if(!box) return;
+  const files = t.files || [];
+  if(!files.length){ box.innerHTML = `<div class="empty">ما في مخرجات مرفقة بهالمهمة.</div>`; return; }
+  const images = files.filter(f=>f.kind==="image"), rest = files.filter(f=>f.kind!=="image");
+  const byKind = {}; rest.forEach(f => (byKind[f.kind] = byKind[f.kind] || []).push(f));
+  box.innerHTML = `
+    ${rest.length ? `<div id="fviewer" class="fviewer"></div><div id="flist" class="flist">${Object.entries(byKind).map(([k,arr]) =>
+      `<div class="fgroup"><span class="fgk">${KIND_ICON[k]} ${KIND_AR[k]} · ${arr.length}</span>${arr.map(f=>`<button class="fchip" data-p="${esc(f.path)}" title="${esc(f.path)}">${esc(f.name)}</button>`).join("")}</div>`).join("")}</div>` : ""}
+    ${images.length ? `<div class="fgk" style="margin-top:12px">🖼 صور · ${images.length}</div><div class="fgrid">${images.slice(0,60).map((f,i)=>`<button class="fthumb" data-i="${i}" title="${esc(f.name)}"><img data-thumb="${i}" alt=""></button>`).join("")}</div>` : ""}`;
+  box.querySelectorAll(".fchip").forEach(c => c.onclick = () => showInViewer(files.find(f=>f.path===c.dataset.p)));
+  box.querySelectorAll(".fthumb").forEach(b => b.onclick = () => openLightbox(images, +b.dataset.i));
+  images.slice(0,60).forEach(async (f,i) => { const img = box.querySelector(`[data-thumb="${i}"]`); const src = await fileSrc(f).catch(()=>null); if(img && src) img.src = src; else if(img) img.parentElement.classList.add("noimg"); });
+  if(rest.length) showInViewer(rest[0]);
+}
+function thumbStrip(t){
+  const imgs = (t.files||[]).filter(f=>f.kind==="image").slice(0,4);
+  const kinds = [...new Set((t.files||[]).map(f=>f.kind))].filter(k=>k!=="image");
+  if(!imgs.length && !kinds.length) return "";
+  return `<div class="tstrip">${imgs.map(f=>`<img data-tsrc="${esc(f.path)}" data-tenc="${esc(f.enc||"")}" alt="">`).join("")}${kinds.slice(0,4).map(k=>`<span class="tk" title="${KIND_AR[k]}">${KIND_ICON[k]}</span>`).join("")}<span class="tid">${(t.files||[]).length} ملف</span></div>`;
+}
+async function fillThumbs(root){
+  for(const img of root.querySelectorAll("img[data-tsrc]")){
+    if(img.src) continue;
+    const src = await fileSrc({path:img.dataset.tsrc, enc:img.dataset.tenc, kind:"image", mime:"image/png"}).catch(()=>null);
+    if(src) img.src = src; else img.remove();
+  }
+}
 
 /* ================= TEAM ================= */
 const TSTAT = [
@@ -877,7 +1012,7 @@ function taskCard(t){
       ${t.decision==="pending"?'<span class="dec">✋ بانتظار قرارك</span>':""}<span class="pri pri-${t.priority}" style="margin-inline-start:auto">${t.priority==="high"?"●●●":t.priority==="med"?"●●":"●"}</span></div>
     <div class="tt">${esc(t.title)}</div>
     <div class="tm">${avatar(a,"sm")}${esc(a?.name||t.assignee)}${r?` <span style="color:var(--faint)">← يراجع</span> ${esc(r.name)}`:""}</div>
-    <div class="tm">${esc(projName(t.project))}${t.due?` · <span class="num">${esc(t.due)}</span>`:""}</div></div>`;
+    <div class="tm">${esc(projName(t.project))}${t.due?` · <span class="num">${esc(t.due)}</span>`:""}</div>${thumbStrip(t)}</div>`;
 }
 function renderTeam(){
   const el = $("#teamMain");
@@ -920,6 +1055,7 @@ function renderTeam(){
   const done = T.filter(t=>t.status==="done").sort((a,b)=>(b.updated||"").localeCompare(a.updated||""));
   $("#delList").innerHTML = done.length ? `<div class="mini-list">${done.slice(0,6).map(t=>`<div class="row" data-t="${t.id}" style="cursor:pointer">${avatar(MEM(t.assignee),"sm")}<span style="flex:1">${esc(t.title)}</span><span class="tid">${esc(t.updated)}</span></div>`).join("")}</div>`
     : `<div class="empty">لسا ما في تسليمات.</div>`;
+  fillThumbs($("#teamView"));
   document.querySelectorAll("#teamView [data-m]").forEach(n => n.onclick = () => openMember(n.dataset.m));
   document.querySelectorAll("#teamView [data-t]").forEach(n => { if(n.closest("#teamSeg")) return; n.onclick = () => openTask(n.dataset.t); });
 }
@@ -953,8 +1089,9 @@ function openMember(id){
       <div class="field"><label>📦 سلّم (${done.length})</label>${list(done.slice(0,8),"لسا ما سلّم شي")}</div>`}
       ${m.id!=="saif"?`<button class="btn" id="assignBtn">+ مهمة لـ ${esc(m.name.split(" ")[0])}</button>`:""}
     </div>`;
-  $("#drawer").classList.add("on"); $("#scrim").classList.add("on");
+  $("#drawer").classList.remove("wide"); $("#drawer").classList.add("on"); $("#scrim").classList.add("on");
   $("#closeD").onclick = closeDrawer;
+  fillThumbs($("#drawer"));
   $("#drawer").querySelectorAll("[data-m]").forEach(b => b.onclick = () => openMember(b.dataset.m));
   $("#drawer").querySelectorAll("[data-t]").forEach(b => b.onclick = () => openTask(b.dataset.t));
   $("#assignBtn") && ($("#assignBtn").onclick = () => openNewTask(m.id));
@@ -971,6 +1108,8 @@ function openTask(tid){
         <input class="in" id="decNote" placeholder="ملاحظة (اختياري) — بتنكتب بالملف وبتوصل للفريق">
         <div style="display:flex;gap:8px;margin-top:10px"><button class="btn primary" id="approve">موافق</button><button class="btn danger" id="reject">رفض / تعديل</button></div></div>` : ""}
       ${t.decision && t.decision!=="pending" ? `<div class="kv"><span class="dec">${t.decision==="approved"?"✓ وافقت":"✕ رفضت"}</span></div>` : ""}
+      <div class="field"><label>📎 المخرجات ${(t.files||[]).length ? "· " + t.files.length + " ملف" : ""}</label><div id="fbox"></div>
+        ${t.deliverables.filter(d=>/^https?:/.test(d)).map(d=>`<a class="tag" href="${esc(d)}" target="_blank" rel="noopener">${esc(d)} ↗</a>`).join(" ")}</div>
       <div class="field"><label>الحالة</label><div class="stat-pick" id="t_status">${TSTAT.map(s=>`<button data-s="${s.k}" class="${t.status===s.k?'on':''}"><span class="cdot" style="background:${s.c}"></span>${s.t}</button>`).join("")}</div></div>
       <div class="row">
         <div class="field"><label>الموظف</label><select class="in" id="t_assignee">${opts(t.assignee)}</select></div>
@@ -980,12 +1119,12 @@ function openTask(tid){
         <span>طلبها: <b>${esc(MEM(t.requested_by)?.name||t.requested_by||"—")}</b></span><span>أُنشئت <b class="num">${esc(t.created)}</b></span>${t.due?`<span>الموعد <b class="num">${esc(t.due)}</b></span>`:""}</div>
       <div class="field"><label>المطلوب</label><div class="box md">${esc(t.brief)||'<span class="empty">—</span>'}</div></div>
       <div class="field"><label>ورقة التسليم</label><div class="box md">${esc(t.handoff)||'<span class="empty">—</span>'}</div></div>
-      ${t.deliverables.length?`<div class="field"><label>المخرجات</label><div class="box dl">${t.deliverables.map(d=>`<div><code>${esc(d)}</code></div>`).join("")}</div></div>`:""}
       ${t.saif_note?`<div class="field"><label>قراراتك</label><div class="box md">${esc(t.saif_note)}</div></div>`:""}
       <div class="empty">ملف المهمة: <code>_agency/tasks/${t.id}.md</code> — أي تعديل هون بينكتب فيه مباشرة.</div>
     </div>`;
-  $("#drawer").classList.add("on"); $("#scrim").classList.add("on");
+  $("#drawer").classList.add("on", "wide"); $("#scrim").classList.add("on");
   $("#closeD").onclick = closeDrawer;
+  renderFiles(t);
   const save = async fields => { const res = await api("/api/task", {id:t.id, fields}); res.error ? toast(res.error) : flashSaved(); };
   $("#t_status").querySelectorAll("button").forEach(b => b.onclick = async () => {
     $("#t_status").querySelectorAll("button").forEach(x=>x.classList.toggle("on", x===b)); await save({status:b.dataset.s}); });
