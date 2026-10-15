@@ -464,6 +464,15 @@ function askPasscode(msg){
 async function loadEncrypted(){
   let env;
   try{ env = await fetchEnvelope(); }catch(e){ setLive(false); return S; }
+  if(!env || !env.ct){
+    if(!document.querySelector(".lock")){
+      const el = document.createElement("div"); el.className = "lock";
+      el.innerHTML = `<div class="box"><div class="mark">◆</div><h2>لوحة الإنجاز</h2><p>لسا ما في بيانات منشورة. بتطلع هون لحالها أول ما ينحفظ رمز اللوحة على الماك.</p></div>`;
+      document.body.appendChild(el);
+    }
+    return null;
+  }
+  document.querySelector(".lock")?.remove();
   let keyHex = load("key:" + env.salt, "");
   for(let attempt = 0; attempt < 5; attempt++){
     try{
