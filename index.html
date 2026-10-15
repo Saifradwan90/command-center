@@ -261,8 +261,8 @@ input[type=range]{width:100%;accent-color:var(--gold)}
 @media (max-width:1300px){.team-grid{grid-template-columns:1fr}}
 
 /* ---------- online read-only mode ---------- */
-.ro #addBtn,.ro #addTaskBtn,.ro #rescan,.ro #approve,.ro #reject,.ro #decNote,.ro #assignBtn,.ro [data-of],.ro [data-open],.ro [data-add],.ro [data-ign],.ro #newTask{display:none !important}
-.ro .drawer input,.ro .drawer select,.ro .drawer textarea,.ro .stat-pick button{pointer-events:none}
+.ro #addBtn,.ro #addTaskBtn,.ro #rescan,.ro #assignBtn,.ro [data-of],.ro [data-open],.ro [data-add],.ro [data-ign],.ro #newTask{display:none !important}
+.ro .drawer input:not(#decNote),.ro .drawer select,.ro .drawer textarea,.ro .stat-pick button{pointer-events:none}
 .ro-badge{font-size:11px;padding:3px 9px;border-radius:999px;border:1px solid var(--line2);color:var(--muted)}
 .lock{position:fixed;inset:0;z-index:100;display:grid;place-items:center;background:var(--bg)}
 .lock .box{width:min(360px,90vw);background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:26px;display:flex;flex-direction:column;gap:12px}
@@ -381,7 +381,7 @@ input[type=range]{width:100%;accent-color:var(--gold)}
   <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn ghost" id="n_cancel">إلغاء</button><button class="btn primary" id="n_ok">إنشاء</button></div>
 </div></div>
 
-<script>window.CC_STATIC={"api":"https://api.github.com/repos/Saifradwan90/command-center/contents/state.enc?ref=data","raw":"https://raw.githubusercontent.com/Saifradwan90/command-center/data/state.enc","files":"https://raw.githubusercontent.com/Saifradwan90/command-center/data/"};</script>
+<script>window.CC_STATIC={"api":"https://api.github.com/repos/Saifradwan90/command-center/contents/state.enc?ref=data","raw":"https://raw.githubusercontent.com/Saifradwan90/command-center/data/state.enc","files":"https://raw.githubusercontent.com/Saifradwan90/command-center/data/","issues":"https://github.com/Saifradwan90/command-center/issues/new"};</script>
 <script>
 const STATIC = window.CC_STATIC || null;
 const AV_BASE = STATIC ? "avatars/" : "/agency/avatars/";
@@ -487,6 +487,19 @@ function askPasscode(msg){
     document.body.appendChild(el);
     el.querySelector("form").onsubmit = e => { e.preventDefault(); const v = el.querySelector("input[type=password]").value; const keep = el.querySelector("input[type=checkbox]").checked; el.remove(); res({v, keep}); };
   });
+}
+/* Online decisions: the decision is encrypted with the same key and sent as a GitHub issue body.
+   The Mac (publisher) reads issues opened by the owner, decrypts them, applies the decision and closes the issue. */
+async function sendDecisionOnline(task, decision, note){
+  const key = await crypto.subtle.importKey("raw", unhex(window.__ccKey), "AES-GCM", false, ["encrypt"]);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const payload = new TextEncoder().encode(JSON.stringify({t: task.id, d: decision, n: note, ts: Date.now()}));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({name:"AES-GCM", iv}, key, payload));
+  const blob = new Uint8Array(iv.length + ct.length); blob.set(iv); blob.set(ct, iv.length);
+  const body = "CC-DECISION:v1:" + btoa(String.fromCharCode(...blob));
+  const url = `${STATIC.issues}?title=${encodeURIComponent("قرار من لوحة الإنجاز")}&body=${encodeURIComponent(body)}`;
+  window.open(url, "_blank");
+  store("sent:" + task.id, decision);
 }
 async function loadEncrypted(){
   let env;
@@ -1112,7 +1125,8 @@ function openTask(tid){
     <div class="db">
       ${t.decision==="pending" || (t.status==="review" && t.reviewer==="saif") ? `<div class="box" style="border-color:var(--gold2)"><div style="font-weight:600;margin-bottom:8px">✋ هالمهمة بانتظار قرارك</div>
         <input class="in" id="decNote" placeholder="ملاحظة (اختياري) — بتنكتب بالملف وبتوصل للفريق">
-        <div style="display:flex;gap:8px;margin-top:10px"><button class="btn primary" id="approve">موافق</button><button class="btn danger" id="reject">رفض / تعديل</button></div></div>` : ""}
+        <div style="display:flex;gap:8px;margin-top:10px"><button class="btn primary" id="approve">موافق</button><button class="btn danger" id="reject">رفض / تعديل</button></div>
+        ${STATIC ? `<div class="empty" style="margin-top:8px">من الأونلاين: الزر بيفتح صفحة GitHub جاهزة، بتضغط فيها «Submit» وبس. القرار مشفّر وما حدا بيقدر يقراه.${load("sent:"+t.id,"") ? " · انبعت قرار قبل، بيبيّن هون أول ما يوصل للماك." : ""}</div>` : ""}</div>` : ""}
       ${t.decision && t.decision!=="pending" ? `<div class="kv"><span class="dec">${t.decision==="approved"?"✓ وافقت":"✕ رفضت"}</span></div>` : ""}
       <div class="field"><label>📎 المخرجات ${(t.files||[]).length ? "· " + t.files.length + " ملف" : ""}</label><div id="fbox"></div>
         ${t.deliverables.filter(d=>/^https?:/.test(d)).map(d=>`<a class="tag" href="${esc(d)}" target="_blank" rel="noopener">${esc(d)} ↗</a>`).join(" ")}</div>
@@ -1137,6 +1151,11 @@ function openTask(tid){
   $("#t_assignee").onchange = e => save({assignee:e.target.value});
   $("#t_reviewer").onchange = e => save({reviewer:e.target.value});
   const decide = async d => {
+    if(STATIC){
+      await sendDecisionOnline(t, d, $("#decNote").value.trim());
+      toast("انفتحت صفحة GitHub — اضغط «Submit new issue» والقرار بيوصل للماك خلال دقيقة");
+      return;
+    }
     const fields = {decision:d};
     if(t.status==="review" && t.reviewer==="saif") fields.status = d==="approved" ? "done" : "doing";
     const res = await api("/api/task", {id:t.id, fields, note:$("#decNote").value.trim()});
